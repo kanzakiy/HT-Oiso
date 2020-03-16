@@ -8,7 +8,7 @@ See https://github.com/PetterS/SuiteSparse/tree/master/UMFPACK for UMFPACK
 See MEMO.txt for making STEAM library
 
 First run hydrothermal model: 
-    gfortran HT1_v8uw_irr.f90 umf4_f77wrapper.o -lumfpack -lamd -lcholmod -lcolamd -lsuitesparseconfig -lopenblas -lsteam -g -fcheck=all
+    gfortran HT1_v8uw_irr_off.f90 umf4_f77wrapper.o -lumfpack -lamd -lcholmod -lcolamd -lsuitesparseconfig -lopenblas -lsteam -g -fcheck=all
     ./a
 Then run isotope model:
     gfortran Oiso+HT1_v6_irr.f90 umf4_f77wrapper.o -lumfpack -lamd -lcholmod -lcolamd -lsuitesparseconfig -lopenblas -g -fcheck=all

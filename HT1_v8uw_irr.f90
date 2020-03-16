@@ -13,7 +13,7 @@ program HT1
 implicit none
 
 integer(kind=4),parameter :: nx = 200, ny = 320
-real(kind=8),parameter :: xmax = 30d3   !  m
+real(kind=8),parameter :: xmax = 300d3   !  m
 real(kind=8),parameter :: ymax = 12d3    !  m 
 real(kind=8),parameter :: yr2sec = 60d0*60d0*24d0*365.25d0 ! sec/yr
 real(kind=8) :: rl = 1d8 ! m ridge length
@@ -22,7 +22,7 @@ real(kind=8) xe(nx+1),ye(ny+1),xm(nx),ym(ny)
 real(kind=8) temp(nx,ny),pres(nx,ny), visc(nx,ny), cp(nx,ny), rho(nx,ny)
 real(kind=8) vx(nx+1,ny), vy(nx,ny+1), perm(nx,ny), poro(nx,ny)
 real(kind=8) vmx(nx,ny), vmy(nx,ny), tempk(nx,ny), dv(nx,ny), qvx(nx,ny), qvy(nx,ny)
-real(kind=8) tempk_pre(nx,ny),ds(nx,ny)
+real(kind=8) tempk_pre(nx,ny),ds(nx,ny),permt_x
 real(kind=8) :: kappa =  3d0  ! Heat conductivity of rock  [W m-1 K-1] = [J s-1 m-1 K-1]
 real(kind=8) :: cpm =  1d3  ! Heat capacity of rock [J kg-1 K-1]
 real(kind=8) :: grav = -9.8d0  ! gravity [m s-2]
@@ -30,11 +30,14 @@ real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
 real(kind=8) :: tempm = 1200d0 ! C intrusion temp
 real(kind=8) :: temps = 2d0 ! C seawater temp
 real(kind=8) :: w = 3d-2/yr2sec ! m/s spreading rate
+! real(kind=8) :: w = 9d-2/yr2sec ! m/s spreading rate
+! real(kind=8) :: w = 1d-2/yr2sec ! m/s spreading rate
 real(kind=8) :: presw = 25d6 !  Pa assuming 2.5 km depth 
 ! real(kind=8) :: presw = 50d6 !  Pa assuming 5.0 km depth 
+! real(kind=8) :: presw = 10d6 !  Pa assuming 1.0 km depth 
 real(kind=8) :: permb = 10d0**(-16.8d0)  ! base permeability [m2] 
 real(kind=8) :: permt = 10d0**(-11.8d0)  ! top permeability [m2] 
-real(kind=8) :: zhalf = 250d0 ! scale depth for half decrease of permeability (see Fisher 1998) 
+real(kind=8) :: zhalf = 300d0 ! scale depth for half decrease of permeability (see Fisher 1998) 
 real(kind=8) :: zscale = 300d0 ! scale depth for half decrease of permeability (see Fisher 1998) 
 integer(kind = 4) ix,iy
 real(kind=8) flxt(nx,ny), flxadv(nx,ny), flxcnd(nx,ny), flxres(nx,ny), flxb(nx,ny)
@@ -77,7 +80,7 @@ integer dumint(8)
 call date_and_time(dumchr(1),dumchr(2),dumchr(3),dumint)
 
 workdir = 'C:/Users/YK/Desktop/HT_res/'
-workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh250_spx1_200x320_irr'
+workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh300_wide_spx1_200x320_irr_v2'
 workdir = trim(adjustl(workdir))//'-'//trim(adjustl(dumchr(1)))
 call system ('mkdir -p '//trim(adjustl(workdir)))
 workdir = trim(adjustl(workdir))//'/'
@@ -158,6 +161,11 @@ do iy = 1, ny
     ! log linear
     ! perm(:,iy) = 10d0**(max(log10(permb),(log10(permb)-log10(permt))*ym(iy)/zhalf+log10(permt)))
     ! 10**exp
+    ! do ix =1,nx
+        ! if (xm(ix)<=30d3) permt_x = permt 
+        ! if (xm(ix)>30d3) permt_x = 10d0**max(log10(permt)+2d0*(xm(ix)-30d3)/(xmax-30d3),log10(permt))
+        ! perm(ix,iy) = 10d0**((log10(permt_x)-log10(permb))*exp(-ym(iy)/zhalf)+log10(permb))
+    ! enddo 
     perm(:,iy) = 10d0**((log10(permt)-log10(permb))*exp(-ym(iy)/zhalf)+log10(permb))
     ! 10**tanh
     ! perm(:,iy) = 10d0**((log10(permt)-log10(permb))*0.5d0*(1d0-tanh(ym(iy)-zhalf/zscale))+log10(permb))

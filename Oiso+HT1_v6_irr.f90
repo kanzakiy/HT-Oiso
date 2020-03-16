@@ -24,6 +24,9 @@ real(kind=8) poro(nx,ny), rhob(nx,ny), rxn(nx,ny)
 real(kind=8) drxn_dfr(nx,ny),drxn_dfp(nx,ny) 
 real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
 real(kind=8) :: w = 3d-2 ! m/yr spreading rate 
+! real(kind=8) :: w = 9d-2 ! m/yr spreading rate 
+! real(kind=8) :: w = 1d-2 ! m/yr spreading rate 
+! real(kind=8) :: w = 3d-1 ! m/yr spreading rate 
 real(kind=8) :: temps = 2d0 ! C seawater temp
 real(kind=8) :: poroi = 0.05d0 !  
 real(kind=8) :: disp = 10d0 !  dispersivity [m]
@@ -38,6 +41,7 @@ real(kind=8), parameter :: rsmow = 0.0020052d0
 real(kind=8), parameter :: rg = 8.3144d-3 !  kJ mol^-1 K^-1
 real(kind=8), parameter :: E = 50d0 ! kJ
 real(kind=8), parameter :: kref = 10d0**(-8.5d0) ! mol-1 kg yr-1
+! real(kind=8), parameter :: kref = 10d0**(-9.5d0) ! mol-1 kg yr-1
 real(kind=8), parameter :: tempref = 5d0 ! C
 real(kind=8), parameter :: o18ri = 5.7d0 ! o/oo of solid rock
 real(kind=8), parameter :: ms = 0.5d0/16.0d0*1.0d3 ! mol kg-1
@@ -76,7 +80,7 @@ real(kind=8) :: f2d, r2d, d2f, d2r
 real(kind=8) beta_grid 
 
 workdir = 'C:/Users/YK/Desktop/HT_res/'//  &
-    'perm_expexp_-16_8-11_8_zh300_spx1_200x320_irr-20191010'  &
+    'perm_expexp_-16_8-11_3_zh500_spx1_200x320_irr-20191030'  &
     //'/'
  
 !  initial conditions 
@@ -207,6 +211,9 @@ fsw = d2f(o18swi)
 fri = d2f(o18ri)
 
 print*,fri
+
+! fr=fri
+! fp=fsw
 
 frx = fr
 fpx = fp
@@ -800,6 +807,10 @@ write ( *, * ) ''
 do iy=1,ny
     do ix=1,nx
         row = 2*(ix-1) + 1 + (iy-1)*nx*2
+        ! if (kai(row)>frx(ix,iy))kai(row)=0.5d0*frx(ix,iy)
+        ! if (kai(row)<-frx(ix,iy))kai(row)=-0.5d0*frx(ix,iy)
+        ! if (kai(row+1)>fpx(ix,iy))kai(row+1)=0.5d0*fpx(ix,iy)
+        ! if (kai(row+1)<-fpx(ix,iy))kai(row+1)=-0.5d0*fpx(ix,iy)
         frx(ix,iy) = frx(ix,iy) + kai(row) 
         fpx(ix,iy) = fpx(ix,iy) + kai(row+1) 
         if (frx(ix,iy)/=0d0) emx(row) = abs(kai(row)/frx(ix,iy))

@@ -27,8 +27,8 @@ real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
 real(kind=8) :: tempm = 1200d0 ! C intrusion temp
 real(kind=8) :: temps = 2d0 ! C seawater temp
 real(kind=8) :: w = 3d-2/yr2sec ! m/s spreading rate
-! real(kind=8) :: presw = 25d6 !  Pa assuming 2.5 km depth 
-real(kind=8) :: presw = 50d6 !  Pa assuming 2.5 km depth 
+real(kind=8) :: presw = 25d6 !  Pa assuming 2.5 km depth 
+! real(kind=8) :: presw = 50d6 !  Pa assuming 2.5 km depth 
 real(kind=8) :: permb = 10d0**(-16.8d0)  ! base permeability [m2] 
 real(kind=8) :: permt = 10d0**(-11.8d0)  ! top permeability [m2] 
 real(kind=8) :: zhalf = 300d0 ! scale depth for half decrease of permeability (see Fisher 1998) 
@@ -73,7 +73,7 @@ integer dumint(8)
 call date_and_time(dumchr(1),dumchr(2),dumchr(3),dumint)
 
 workdir = 'C:/Users/YK/Desktop/HT_res/'
-workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh300_spx1_wd5km_200x320'
+workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh300_spx1_200x320'
 workdir = trim(adjustl(workdir))//'-'//trim(adjustl(dumchr(1)))
 call system ('mkdir -p '//trim(adjustl(workdir)))
 workdir = trim(adjustl(workdir))//'/'
@@ -802,7 +802,7 @@ print '("net flow in kg/yr:",E10.3)',sum(vmy(:,1)*dx*rl*yr2sec)
 print '("exchanged flow in kg/yr:",E10.3)',sum(abs(vy(:,1))*dx*rl*yr2sec)
 print '("exchanged flow in kg/yr:",E10.3)',sum(abs(vmy(:,1))*dx*rl*yr2sec)
 
-
+! pause
 tempk = temp + 273.15d0
 
 nmx = nx*ny
