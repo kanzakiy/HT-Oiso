@@ -33,14 +33,14 @@ real(kind=8) :: disp = 10d0 !  dispersivity [m]
 integer(kind = 4) ix,iy, isw
 ! o isotope 
 real(kind=8) fr(nx,ny), fp(nx,ny), kex(nx,ny), alfa(nx,ny), dif(nx,ny)
-real(kind=8) frx(nx,ny), fpx(nx,ny), o18r(nx,ny),o18p(nx,ny)
+real(kind=8) frx(nx,ny), fpx(nx,ny), o18r(nx,ny),o18p(nx,ny),kref(nx,ny)
 real(kind=8) fsw, fri
 real(kind=8) :: difi = 1d-9*yr2sec  ! m2 yr-1
 real(kind=8) :: o18swi = -0d0  ! o/oo
 real(kind=8), parameter :: rsmow = 0.0020052d0 
 real(kind=8), parameter :: rg = 8.3144d-3 !  kJ mol^-1 K^-1
 real(kind=8), parameter :: E = 50d0 ! kJ
-real(kind=8), parameter :: kref = 10d0**(-8.5d0) ! mol-1 kg yr-1
+real(kind=8), parameter :: kref_0 = 10d0**(-8.5d0) ! mol-1 kg yr-1
 ! real(kind=8), parameter :: kref = 10d0**(-9.5d0) ! mol-1 kg yr-1
 real(kind=8), parameter :: tempref = 5d0 ! C
 real(kind=8), parameter :: o18ri = 5.7d0 ! o/oo of solid rock
@@ -48,6 +48,10 @@ real(kind=8), parameter :: ms = 0.5d0/16.0d0*1.0d3 ! mol kg-1
 real(kind=8), parameter :: mw = 16d0/18d0/16.0d0*1.0d3  !  mol kg-1
 real(kind=8), parameter :: tempk_0 = 273.15d0  !  K
 real(kind=8) :: beta = 0.876002291d0 ! anddesite (Zhao and Zheng, 2003)
+real(kind=8) :: age_lim = 1d2 ! ages (yr) until which rate is the same as that in the laboratory; inferred from Maher et al. (2014)
+! real(kind=8) :: age_lim = 1d3 ! ages (yr) until which rate is the same as that in the laboratory; inferred from Maher et al. (2014)
+logical:: kref_variable = .false.  ! default
+! logical:: kref_variable = .true.  ! rate reciprocal of age is imposed after Maher et al. (2004)
 real(kind=8) rflxadv(nx,ny), rflxrxn(nx,ny), rflxt(nx,ny), pflxadv(nx,ny), pflxrxn(nx,ny), pflxdif(nx,ny), pflxt(nx,ny) 
 real(kind=8) rflxrxnpls(nx,ny), rflxrxnmns(nx,ny)
 ! matrix solver
@@ -73,14 +77,15 @@ real(kind=8) error
 real(kind=8),parameter :: tol = 1d-12
 integer(kind=4) cnt, cnt2, ixp, ixn, iyp, iyn, tmpint(6),tmpint2(6)
 real(kind=8) tmprl(6)  
-character*100 workdir
+character*500 workdir
 character*2 intsw
+character*1 signsw
 ! functions
 real(kind=8) :: f2d, r2d, d2f, d2r
 real(kind=8) beta_grid 
 
 workdir = 'C:/Users/YK/Desktop/HT_res/'//  &
-    'perm_expexp_-16_8-11_3_zh500_spx1_200x320_irr-20191030'  &
+    'perm_expexp_-16_8-11_8_zh500_spx1_200x320_irr-20200518'  &
     //'/'
  
 !  initial conditions 
@@ -193,6 +198,17 @@ dif = dif*yr2sec   ! converting sec to yr
 
 dif = dif*poro**1.4d0 + disp*vabs  !  assuming homogeneous dispersivity 
 
+kref = kref_0  ! constant kref
+!  asuming change rate with age 
+if (kref_variable)then 
+    do ix=1,nx
+        if (xm(ix)/w <= age_lim) then 
+            kref(ix,:) = 10d0**(-6.9d0)
+        elseif (xm(ix)/w > age_lim) then 
+            kref(ix,:) = 10d0**(-6.9d0)/(xm(ix)/w/age_lim)
+        endif 
+    enddo
+endif 
 kex = kref*exp(-E*(1.0d0/(tempk_0+temp)-1.0d0/(tempk_0+tempref))/rg)
 
 open(unit=100,file=trim(adjustl(workdir))//'k.txt',action='write',status='replace')
@@ -201,11 +217,19 @@ do iy=1,ny
 enddo
 close(100)
 
-do isw = 1,13, 2
+do isw = -5,13, 2
+! do isw = 1,13, 2
 ! do isw = 1,1
 
 o18swi = -1d0*(isw-1)
 write(intsw,'(I2.2)') int(abs(o18swi))
+if (o18swi > 0d0) then 
+    signsw = 'p'
+elseif (o18swi == 0d0) then
+    signsw = '0'
+elseif (o18swi < 0d0) then 
+    signsw = 'n'
+endif 
 
 fsw = d2f(o18swi)
 fri = d2f(o18ri)
@@ -839,9 +863,12 @@ enddo
 
 omega = frx*(1d0-fpx)/(1d0-frx)/fpx/alfa
 
-open(unit=100,file=trim(adjustl(workdir))//'o18r-'//trim(adjustl(intsw))//'.txt',action='write',status='replace')
-open(unit=200,file=trim(adjustl(workdir))//'o18p-'//trim(adjustl(intsw))//'.txt',action='write',status='replace')
-open(unit=300,file=trim(adjustl(workdir))//'omage-'//trim(adjustl(intsw))//'.txt',action='write',status='replace')
+open(unit=100,file=trim(adjustl(workdir))//'o18r-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+    ,action='write',status='replace')
+open(unit=200,file=trim(adjustl(workdir))//'o18p-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+    ,action='write',status='replace')
+open(unit=300,file=trim(adjustl(workdir))//'omage-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+    ,action='write',status='replace')
 do iy=1,ny
     write(100,*) (o18r(ix,iy),ix=1,nx) 
     write(200,*) (o18p(ix,iy),ix=1,nx) 
