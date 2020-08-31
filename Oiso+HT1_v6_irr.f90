@@ -1,92 +1,55 @@
-
-!**************************************************************************************************************************************
-program Oiso_HT1
-! oxygen isotope calculation using 2D data for flow, temperature and density
-! looking working 
-! modified from v3 to include the change in rho for diffusion term
-! modified from v4 to include the temp dependence of diffusion coefficient
-! remove non-sparse matrix solver to save the memory
-! from v5 to remove porosity before q
-! from v6 trying irregular grid 
+program Oiso_HT_main
 implicit none
 
 integer(kind=4),parameter :: nx = 200, ny = 320
 real(kind=8),parameter :: xmax = 30d3   !  m
 real(kind=8),parameter :: ymax = 12d3    !  m 
+real(kind=8),parameter :: rg = 8.3144d-3 !  kJ mol^-1 K^-1
+real(kind=8),parameter :: E = 50d0 ! kJ
+real(kind=8),parameter :: kref_0 = 10d0**(-8.5d0) ! mol-1 kg yr-1
+real(kind=8),parameter :: tempref = 5d0 ! C
+real(kind=8),parameter :: tempk_0 = 273.15d0  !  K
 real(kind=8),parameter :: yr2sec = 60d0*60d0*24d0*365.25d0 ! sec/yr
-real(kind=8) :: rl = 1d8 ! m ridge length
-real(kind=8) dx(nx), dy(ny), dt, time  ! m,m, yr, yr
-real(kind=8) xe(nx+1),ye(ny+1),xm(nx),ym(ny),ds(nx,ny)
-real(kind=8) temp(nx,ny), rho(nx,ny)  ! need to be read 
-real(kind=8) vmx(nx,ny), vmy(nx,ny) ! need to be read 
-real(kind=8) visc(nx,ny), vabs(nx,ny), wr(nx,ny), omega(nx,ny)
-real(kind=8) poro(nx,ny), rhob(nx,ny), rxn(nx,ny) 
-real(kind=8) drxn_dfr(nx,ny),drxn_dfp(nx,ny) 
-real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
+real(kind=8),parameter :: ms = 0.5d0/16.0d0*1.0d3 ! mol kg-1
+real(kind=8),parameter :: mw = 16d0/18d0/16.0d0*1.0d3  !  mol kg-1
 real(kind=8) :: w = 3d-2 ! m/yr spreading rate 
-! real(kind=8) :: w = 9d-2 ! m/yr spreading rate 
-! real(kind=8) :: w = 1d-2 ! m/yr spreading rate 
-! real(kind=8) :: w = 3d-1 ! m/yr spreading rate 
-real(kind=8) :: temps = 2d0 ! C seawater temp
+real(kind=8) :: lambda = 0.5305d0
+real(kind=8) :: gamma = 0d0
 real(kind=8) :: poroi = 0.05d0 !  
 real(kind=8) :: disp = 10d0 !  dispersivity [m]
-integer(kind = 4) ix,iy, isw
-! o isotope 
-real(kind=8) fr(nx,ny), fp(nx,ny), kex(nx,ny), alfa(nx,ny), dif(nx,ny)
-real(kind=8) frx(nx,ny), fpx(nx,ny), o18r(nx,ny),o18p(nx,ny),kref(nx,ny)
-real(kind=8) fsw, fri
-real(kind=8) :: difi = 1d-9*yr2sec  ! m2 yr-1
-real(kind=8) :: o18swi = -0d0  ! o/oo
-real(kind=8), parameter :: rsmow = 0.0020052d0 
-real(kind=8), parameter :: rg = 8.3144d-3 !  kJ mol^-1 K^-1
-real(kind=8), parameter :: E = 50d0 ! kJ
-real(kind=8), parameter :: kref_0 = 10d0**(-8.5d0) ! mol-1 kg yr-1
-! real(kind=8), parameter :: kref = 10d0**(-9.5d0) ! mol-1 kg yr-1
-real(kind=8), parameter :: tempref = 5d0 ! C
-real(kind=8), parameter :: o18ri = 5.7d0 ! o/oo of solid rock
-real(kind=8), parameter :: ms = 0.5d0/16.0d0*1.0d3 ! mol kg-1
-real(kind=8), parameter :: mw = 16d0/18d0/16.0d0*1.0d3  !  mol kg-1
-real(kind=8), parameter :: tempk_0 = 273.15d0  !  K
 real(kind=8) :: beta = 0.876002291d0 ! anddesite (Zhao and Zheng, 2003)
-real(kind=8) :: age_lim = 1d2 ! ages (yr) until which rate is the same as that in the laboratory; inferred from Maher et al. (2014)
-! real(kind=8) :: age_lim = 1d3 ! ages (yr) until which rate is the same as that in the laboratory; inferred from Maher et al. (2014)
+real(kind=8) :: age_lim = 1d3 ! ages (yr) until which rate is the same as that in the laboratory; inferred from Maher et al. (2014)
+real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
+real(kind=8),dimension(2) :: fsw, fri,dri, dswi, rsmow
+real(kind=8),dimension(2,nx,ny) :: rflxadv, rflxrxn, rflxt, pflxadv, pflxrxn, pflxdif, pflxt  &
+    & ,rflxrxnpls, rflxrxnmns, frx, fpx, dr, dp, omega,kex,alfa,dif
+real(kind=8),dimension(nx,ny) :: capDp17,capDr17 &
+    & ,ds,temp,rho,vmx,vmy,visc,vabs,poro,rhob,kref,theta_eq,theta_kin,wr
+real(kind=8),dimension(nx) :: dx, xm
+real(kind=8),dimension(ny) :: dy, ym
+real(kind=8),dimension(nx+1) :: xe 
+real(kind=8),dimension(ny+1) :: ye 
 logical:: kref_variable = .false.  ! default
 ! logical:: kref_variable = .true.  ! rate reciprocal of age is imposed after Maher et al. (2004)
-real(kind=8) rflxadv(nx,ny), rflxrxn(nx,ny), rflxt(nx,ny), pflxadv(nx,ny), pflxrxn(nx,ny), pflxdif(nx,ny), pflxt(nx,ny) 
-real(kind=8) rflxrxnpls(nx,ny), rflxrxnmns(nx,ny)
-! matrix solver
-integer(kind = 4) nmx 
-real(kind=8), allocatable :: amx(:,:), ymx(:), emx(:)
-integer(kind = 4), allocatable :: ipiv(:)
-integer(kind = 4) infobls 
-! when using sparse matrix solver 
-integer(kind=4) n, nnz
-integer(kind=4), allocatable :: ai(:), ap(:) 
-real(kind=8), allocatable :: ax(:), bx(:) 
-real(kind=8) :: control(20)
-integer(kind=4) i
-real(kind=8) info(90)
-integer(kind=8) numeric
-integer(kind=4) status
-integer(kind=8) symbolic
-integer(kind=4) sys
-real(kind=8), allocatable :: kai(:)
-!
-integer(kind=4) row,col, it, itr
-real(kind=8) error
-real(kind=8),parameter :: tol = 1d-12
-integer(kind=4) cnt, cnt2, ixp, ixn, iyp, iyn, tmpint(6),tmpint2(6)
-real(kind=8) tmprl(6)  
-character*500 workdir
-character*2 intsw
+character*500 workdir,basefield
+integer isw,iiso,ix,iy
+character*2 intsw, isochr
 character*1 signsw
-! functions
-real(kind=8) :: f2d, r2d, d2f, d2r
 real(kind=8) beta_grid 
 
-workdir = 'C:/Users/YK/Desktop/HT_res/'//  &
-    'perm_expexp_-16_8-11_8_zh500_spx1_200x320_irr-20200518'  &
-    //'/'
+real(kind=8) dp2d,mwl_Luz,d2r,r2f,f2r,r2d,r2dp
+!-------------------------------------------------------------------------------------
+
+rsmow(1) = 2.0052d-3
+rsmow(2) = 3.799d-4 
+dri(1) = 5.7d0
+dri(2) = 2.86d0
+fri(1) = r2f(d2r(dri(1),rsmow(1)),d2r(dri(2),rsmow(2)))
+fri(2) = r2f(d2r(dri(2),rsmow(2)),d2r(dri(1),rsmow(1)))
+
+basefield = 'perm_expexp_-16_8-11_8_zh300_spx1_200x320_irr-20200830'
+
+workdir = '../ht-oiso_output/'//trim(adjustl(basefield))//'/'
  
 !  initial conditions 
 
@@ -103,8 +66,6 @@ call make_grid(  &
     ny,beta_grid,ymax  &! input 
     ,dy         &! output
     )
-! dx = xmax/nx
-! dy = ymax/ny
 do ix=1,nx
     do iy=1,ny
         ds(ix,iy)=dx(ix)*dy(iy)
@@ -161,42 +122,28 @@ vmy = vmy/rho*yr2sec/poro
 
 vabs = sqrt(vmx*vmx+vmy*vmy)
 
-! temp = 2d0
-! vmx = 0d0
-
-dif = difi
 ! modified Stokes-Einstein (Krynicki et al., 1978)
-dif = 6.9d-15*(tempk_0+temp)/visc  ! water diffusion [m2 s-1]
-dif = dif/sqrt(20d0/18d0)  ! correction for H218O (Harris et al., 1979)
+dif(1,:,:) = 6.9d-15*(tempk_0+temp(:,:))/visc(:,:)  ! water diffusion [m2 s-1]
+dif(2,:,:) = 6.9d-15*(tempk_0+temp(:,:))/visc(:,:)  ! water diffusion [m2 s-1]
+dif(1,:,:) = dif(1,:,:)/sqrt(20d0/18d0)  ! correction for H218O (Harris et al., 1979)
+dif(2,:,:) = dif(2,:,:)/sqrt(19d0/18d0)  ! correction for H217O (just guessing)
+dif = dif*yr2sec   ! converting sec to yr 
+dif(1,:,:) = dif(1,:,:)*poro(:,:)**1.4d0 + disp*vabs(:,:)  !  assuming homogeneous dispersivity 
+dif(2,:,:) = dif(2,:,:)*poro(:,:)**1.4d0 + disp*vabs(:,:)  !  assuming homogeneous dispersivity 
 
 rhob = (1d0-poro)*rhom + poro*rho
 
-
 wr = poro*rho*mw*vabs/((1d0-poro)*rhom*ms*w)
 
-alfa = (6.673d6/(tempk_0+temp)**2.0d0+10.398d3/(tempk_0+temp)-4.78d0)*exp((1.0d0-beta)/(rg*(tempk_0+temp)))*beta  &
-    -(2.194d6/(tempk_0+temp)**2.0d0+15.163d3/(tempk_0+temp)-4.72d0)+1.767d0*(2.0d0*beta-1.0d0)
+alfa(1,:,:) = (6.673d6/(tempk_0+temp(:,:))**2.0d0+10.398d3/(tempk_0+temp(:,:))-4.78d0) &
+    & *exp((1.0d0-beta)/(rg*(tempk_0+temp(:,:))))*beta  &
+    & -(2.194d6/(tempk_0+temp(:,:))**2.0d0+15.163d3/(tempk_0+temp(:,:))-4.72d0)+1.767d0*(2.0d0*beta-1.0d0)
+alfa(1,:,:) = exp(alfa(1,:,:)/1d3) ! changing from o/oo to fractionation factor
 
-open(unit=100,file=trim(adjustl(workdir))//'alfa.txt',action='write',status='replace')
-open(unit=200,file=trim(adjustl(workdir))//'dif.txt',action='write',status='replace')
-open(unit=300,file=trim(adjustl(workdir))//'vabs.txt',action='write',status='replace')
-open(unit=400,file=trim(adjustl(workdir))//'wr.txt',action='write',status='replace')
-do iy=1,ny
-    write(100,*) (alfa(ix,iy),ix=1,nx) 
-    write(200,*) (dif(ix,iy),ix=1,nx) 
-    write(300,*) (vabs(ix,iy),ix=1,nx) 
-    write(400,*) (wr(ix,iy),ix=1,nx) 
-enddo
-close(100)
-close(200)
-close(300)
-close(400)
+theta_eq = -1.85d0/(tempk_0+temp) + 0.5305d0 ! sharp16
+! theta_eq = -740d0/(tempk_0+temp)/(tempk_0+temp) + 0.5305d0 ! pack14
 
-alfa = exp(alfa/1d3) ! changing from o/oo to fractionation factor
-
-dif = dif*yr2sec   ! converting sec to yr 
-
-dif = dif*poro**1.4d0 + disp*vabs  !  assuming homogeneous dispersivity 
+alfa(2,:,:) = alfa(1,:,:)**theta_eq(:,:)
 
 kref = kref_0  ! constant kref
 !  asuming change rate with age 
@@ -209,35 +156,203 @@ if (kref_variable)then
         endif 
     enddo
 endif 
-kex = kref*exp(-E*(1.0d0/(tempk_0+temp)-1.0d0/(tempk_0+tempref))/rg)
+kex(1,:,:) = kref(:,:)*exp(-E*(1.0d0/(tempk_0+temp(:,:))-1.0d0/(tempk_0+tempref))/rg)
 
-open(unit=100,file=trim(adjustl(workdir))//'k.txt',action='write',status='replace')
+theta_kin = 1d0
+kex(2,:,:) = kex(1,:,:)**theta_kin(:,:)
+
+open(unit=100,file=trim(adjustl(workdir))//'k1.txt',action='write',status='replace')
+open(unit=200,file=trim(adjustl(workdir))//'k2.txt',action='write',status='replace')
+open(unit=300,file=trim(adjustl(workdir))//'alfa1.txt',action='write',status='replace')
+open(unit=400,file=trim(adjustl(workdir))//'alfa2.txt',action='write',status='replace')
+open(unit=500,file=trim(adjustl(workdir))//'dif1.txt',action='write',status='replace')
+open(unit=600,file=trim(adjustl(workdir))//'dif2.txt',action='write',status='replace')
+open(unit=700,file=trim(adjustl(workdir))//'vabs.txt',action='write',status='replace')
+open(unit=800,file=trim(adjustl(workdir))//'wr.txt',action='write',status='replace')
 do iy=1,ny
-    write(100,*) (log10(kex(ix,iy)),ix=1,nx) 
+    write(100,*) (log10(kex(1,ix,iy)),ix=1,nx) 
+    write(200,*) (log10(kex(2,ix,iy)),ix=1,nx) 
+    write(300,*) (alfa(1,ix,iy),ix=1,nx) 
+    write(400,*) (alfa(2,ix,iy),ix=1,nx) 
+    write(500,*) (dif(1,ix,iy),ix=1,nx) 
+    write(600,*) (dif(2,ix,iy),ix=1,nx) 
+    write(700,*) (vabs(ix,iy),ix=1,nx) 
+    write(800,*) (wr(ix,iy),ix=1,nx)
 enddo
 close(100)
+close(200)
+close(300)
+close(400)
+close(500)
+close(600)
+close(700)
+close(800)
 
 do isw = -5,13, 2
 ! do isw = 1,13, 2
 ! do isw = 1,1
 
-o18swi = -1d0*(isw-1)
-write(intsw,'(I2.2)') int(abs(o18swi))
-if (o18swi > 0d0) then 
-    signsw = 'p'
-elseif (o18swi == 0d0) then
-    signsw = '0'
-elseif (o18swi < 0d0) then 
-    signsw = 'n'
-endif 
+    dswi(1) = -1d0*(isw-1)
+    write(intsw,'(I2.2)') int(abs(dswi(1)))
+    if (dswi(1) > 0d0) then 
+        signsw = 'p'
+    elseif (dswi(1) == 0d0) then
+        signsw = '0'
+    elseif (dswi(1) < 0d0) then 
+        signsw = 'n'
+    endif 
 
-fsw = d2f(o18swi)
-fri = d2f(o18ri)
+    dswi(2) = dp2d(mwl_Luz(dswi(1),rsmow(1)),rsmow(2))
 
-print*,fri
+    fsw(1) = r2f(d2r(dswi(1),rsmow(1)),d2r(dswi(2),rsmow(2)))
+    fsw(2) = r2f(d2r(dswi(2),rsmow(2)),d2r(dswi(1),rsmow(1)))
 
-! fr=fri
-! fp=fsw
+    do iiso = 1,2
+        
+        call Oiso_HT1( &
+            & nx,ny,xmax,ymax,w,fsw(iiso),fri(iiso),basefield &! input 
+            & ,dx,dy,ds,rho,vmx,vmy,poro,rhob,kex(iiso,:,:),alfa(iiso,:,:),dif(iiso,:,:)  &! input
+            & ,frx(iiso,:,:),fpx(iiso,:,:),omega(iiso,:,:) &! output
+            & ,rflxadv(iiso,:,:),rflxrxn(iiso,:,:),rflxt(iiso,:,:),rflxrxnpls(iiso,:,:),rflxrxnmns(iiso,:,:) &! output
+            & ,pflxadv(iiso,:,:),pflxrxn(iiso,:,:),pflxdif(iiso,:,:),pflxt(iiso,:,:) &! output
+            )
+    enddo 
+
+    do iy=1,ny
+        do ix=1,nx
+            dr(1,ix,iy) = r2d(f2r(frx(1,ix,iy),frx(2,ix,iy)),rsmow(1))
+            dp(1,ix,iy) = r2d(f2r(fpx(1,ix,iy),fpx(2,ix,iy)),rsmow(1))
+            dr(2,ix,iy) = r2d(f2r(frx(2,ix,iy),frx(1,ix,iy)),rsmow(2))
+            dp(2,ix,iy) = r2d(f2r(fpx(2,ix,iy),fpx(1,ix,iy)),rsmow(2))
+            capDr17(ix,iy) = r2dp(f2r(frx(2,ix,iy),frx(1,ix,iy)),rsmow(2))  &
+                & - (lambda*r2dp(f2r(frx(1,ix,iy),frx(2,ix,iy)),rsmow(1)) + gamma)
+            capDp17(ix,iy) = r2dp(f2r(fpx(2,ix,iy),fpx(1,ix,iy)),rsmow(2))  &
+                & - (lambda*r2dp(f2r(fpx(1,ix,iy),fpx(2,ix,iy)),rsmow(1)) + gamma) 
+        enddo
+    enddo
+    
+    do iiso = 1,2
+        isochr = '18'
+        if (iiso ==2) isochr = '17'
+        
+        open(unit=100,file=trim(adjustl(workdir))//'d'//isochr//'r-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+            ,action='write',status='replace')
+        open(unit=200,file=trim(adjustl(workdir))//'d'//isochr//'p-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+            ,action='write',status='replace')
+        open(unit=300,file=trim(adjustl(workdir))//'omage'//isochr//'-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+            ,action='write',status='replace')
+        do iy=1,ny
+            write(100,*) (dr(iiso,ix,iy),ix=1,nx) 
+            write(200,*) (dp(iiso,ix,iy),ix=1,nx) 
+            write(300,*) (log10(omega(iiso,ix,iy)),ix=1,nx) 
+        enddo
+        close(100)
+        close(200)
+        close(300)
+
+        open(unit=100,file=trim(adjustl(workdir))//'sflxsum'//isochr//'.txt',action='write',status='unknown',position='append')
+        open(unit=200,file=trim(adjustl(workdir))//'pflxsum'//isochr//'.txt',action='write',status='unknown',position='append')
+        print*,'rflxadv, rflxrxn, rflxt, res, rflxrxnpls, rflxrxnmns'
+        print'(6E9.2)',sum(rflxadv(iiso,:,:)), sum(rflxrxn(iiso,:,:)), sum(rflxt(iiso,:,:)) &
+            & ,sum(rflxadv(iiso,:,:))+sum(rflxrxn(iiso,:,:))+sum(rflxt(iiso,:,:)) &
+            & ,sum(rflxrxnpls(iiso,:,:)), sum(rflxrxnmns(iiso,:,:))
+        write(100,*) dswi(iiso), sum(rflxadv(iiso,:,:)), sum(rflxrxn(iiso,:,:)), sum(rflxt(iiso,:,:))  &
+            & ,sum(rflxadv(iiso,:,:))+sum(rflxrxn(iiso,:,:))+sum(rflxt(iiso,:,:)) &
+            & ,sum(rflxrxnpls(iiso,:,:)), sum(rflxrxnmns(iiso,:,:))
+        print*,'pflxadv, pflxrxn, pflxdif, pflxt, res '
+        print'(5E9.2)', sum(pflxadv(iiso,:,:)), sum(pflxrxn(iiso,:,:)), sum(pflxdif(iiso,:,:)), sum(pflxt(iiso,:,:))  &
+            & ,sum(pflxadv(iiso,:,:))+sum(pflxrxn(iiso,:,:))+sum(pflxdif(iiso,:,:))+sum(pflxt(iiso,:,:))
+        write(200,*) dswi(iiso), sum(pflxadv(iiso,:,:)), sum(pflxrxn(iiso,:,:)), sum(pflxdif(iiso,:,:)), sum(pflxt(iiso,:,:)) &
+            & ,sum(pflxadv(iiso,:,:))+sum(pflxrxn(iiso,:,:))+sum(pflxdif(iiso,:,:))+sum(pflxt(iiso,:,:))
+        close(100)
+        close(200)
+    
+    enddo 
+
+        
+    open(unit=100,file=trim(adjustl(workdir))//'capd17r-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+        ,action='write',status='replace')
+    open(unit=200,file=trim(adjustl(workdir))//'capd17p-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
+        ,action='write',status='replace')
+    do iy=1,ny
+        write(100,*) (capDr17(ix,iy),ix=1,nx) 
+        write(200,*) (capDp17(ix,iy),ix=1,nx) 
+    enddo
+    close(100)
+    close(200)
+    
+enddo
+
+EndProgram
+
+!**************************************************************************************************************************************
+!**************************************************************************************************************************************
+!**************************************************************************************************************************************
+
+!**************************************************************************************************************************************
+subroutine Oiso_HT1( &
+    & nx,ny,xmax,ymax,w,fsw,fri,basefield  &! input 
+    & ,dx,dy,ds,rho,vmx,vmy,poro,rhob,kex,alfa,dif  &! input
+    & ,frx,fpx,omega &! output
+    & ,rflxadv,rflxrxn,rflxt,rflxrxnpls,rflxrxnmns &! output
+    & ,pflxadv,pflxrxn,pflxdif,pflxt &! output
+    )
+! oxygen isotope calculation using 2D data for flow, temperature and density
+! looking working 
+! modified from v3 to include the change in rho for diffusion term
+! modified from v4 to include the temp dependence of diffusion coefficient
+! remove non-sparse matrix solver to save the memory
+! from v5 to remove porosity before q
+! from v6 trying irregular grid 
+! enabling application to 17O
+implicit none
+
+integer(kind=4),intent(in) :: nx,ny
+real(kind=8),intent(in) :: xmax,ymax,w,fsw,fri
+real(kind=8),dimension(nx),intent(in) :: dx
+real(kind=8),dimension(ny),intent(in) :: dy
+real(kind=8),dimension(nx,ny),intent(in) :: ds,rho,vmx,vmy,poro,rhob,kex,alfa,dif
+character(500),intent(in) :: basefield
+
+real(kind=8),dimension(nx,ny),intent(out)::frx,fpx,omega  &
+    & ,rflxadv,rflxrxn,rflxt,rflxrxnpls,rflxrxnmns &
+    & ,pflxadv,pflxrxn,pflxdif,pflxt
+    
+real(kind=8) :: rl = 1d8 ! m ridge length
+real(kind=8) dt, time  ! m,m, yr, yr
+real(kind=8) rxn(nx,ny) 
+real(kind=8) drxn_dfr(nx,ny),drxn_dfp(nx,ny) 
+real(kind=8) :: rhom = 3d3 ! rock density [kg m-3]
+integer(kind = 4) ix,iy
+! o isotope 
+real(kind=8) fr(nx,ny), fp(nx,ny)
+real(kind=8), parameter :: ms = 0.5d0/16.0d0*1.0d3 ! mol kg-1
+real(kind=8), parameter :: mw = 16d0/18d0/16.0d0*1.0d3  !  mol kg-1
+! matrix solver
+integer(kind = 4) nmx 
+real(kind=8), allocatable :: emx(:)
+! when using sparse matrix solver 
+integer(kind=4) n, nnz
+integer(kind=4), allocatable :: ai(:), ap(:) 
+real(kind=8), allocatable :: ax(:), bx(:) 
+real(kind=8) :: control(20)
+integer(kind=4) i
+real(kind=8) info(90)
+integer(kind=8) numeric
+integer(kind=4) status
+integer(kind=8) symbolic
+integer(kind=4) sys
+real(kind=8), allocatable :: kai(:)
+!
+integer(kind=4) row,col, it, itr
+real(kind=8) error
+real(kind=8),parameter :: tol = 1d-6
+integer(kind=4) cnt, cnt2, ixp, ixn, iyp, iyn, tmpint(6),tmpint2(6)
+real(kind=8) tmprl(6)  
+!-------------------------------------------------------------------------------------
+
+fr=fri
+fp=fsw
 
 frx = fr
 fpx = fp
@@ -854,29 +969,8 @@ time = time + dt
 
 enddo
 
-do iy=1,ny
-    do ix=1,nx
-        o18r(ix,iy) = f2d(frx(ix,iy))
-        o18p(ix,iy) = f2d(fpx(ix,iy))
-    enddo
-enddo
 
 omega = frx*(1d0-fpx)/(1d0-frx)/fpx/alfa
-
-open(unit=100,file=trim(adjustl(workdir))//'o18r-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
-    ,action='write',status='replace')
-open(unit=200,file=trim(adjustl(workdir))//'o18p-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
-    ,action='write',status='replace')
-open(unit=300,file=trim(adjustl(workdir))//'omage-'//trim(adjustl(signsw))//trim(adjustl(intsw))//'.txt'  &
-    ,action='write',status='replace')
-do iy=1,ny
-    write(100,*) (o18r(ix,iy),ix=1,nx) 
-    write(200,*) (o18p(ix,iy),ix=1,nx) 
-    write(300,*) (log10(omega(ix,iy)),ix=1,nx) 
-enddo
-close(100)
-close(200)
-close(300)
 
 rflxadv = 0d0
 rflxrxn = 0d0 
@@ -1140,20 +1234,7 @@ pflxt=pflxt*ds*rl
 rflxrxnpls = rflxrxnpls*ds*rl
 rflxrxnmns = rflxrxnmns*ds*rl
 
-open(unit=100,file=trim(adjustl(workdir))//'sflxsum.txt',action='write',status='unknown',position='append')
-open(unit=200,file=trim(adjustl(workdir))//'pflxsum.txt',action='write',status='unknown',position='append')
-print*,'rflxadv, rflxrxn, rflxt, res, rflxrxnpls, rflxrxnmns'
-print'(6E9.2)',sum(rflxadv), sum(rflxrxn), sum(rflxt),  sum(rflxadv)+sum(rflxrxn)+sum(rflxt), sum(rflxrxnpls), sum(rflxrxnmns)
-write(100,*) o18swi, sum(rflxadv), sum(rflxrxn), sum(rflxt),  sum(rflxadv)+sum(rflxrxn)+sum(rflxt), sum(rflxrxnpls), sum(rflxrxnmns)
-print*,'pflxadv, pflxrxn, pflxdif, pflxt, res '
-print'(5E9.2)', sum(pflxadv), sum(pflxrxn), sum(pflxdif), sum(pflxt), sum(pflxadv)+sum(pflxrxn)+sum(pflxdif)+sum(pflxt)
-write(200,*) o18swi, sum(pflxadv), sum(pflxrxn), sum(pflxdif), sum(pflxt), sum(pflxadv)+sum(pflxrxn)+sum(pflxdif)+sum(pflxt)
-close(100)
-close(200)
-
-enddo
-
-End program
+Endsubroutine Oiso_HT1
 !**************************************************************************************************************************************
 
 
@@ -1264,44 +1345,76 @@ endsubroutine make_grid
 
 
 
-!**************************************************************************************************************************************
-function d2r(d)
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+function r2d(ratio,rstd)
 implicit none
-real(kind=8), parameter :: rsmow = 0.0020052d0
-real(kind=8) d, d2r
+real(kind=8) r2d,ratio,rstd
+r2d=(ratio/rstd-1d0)*1d3
+endfunction r2d
 
-d2r = (1d0+d*1d-3)*rsmow 
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-end function d2r
-!**************************************************************************************************************************************
-!**************************************************************************************************************************************
-function d2f(d)
+function d2r(delta,rstd)
 implicit none
-real(kind=8), parameter :: rsmow = 0.0020052d0
-real(kind=8) d, d2r, d2f
+real(kind=8) d2r,delta,rstd
+d2r=(delta*1d-3+1d0)*rstd
+endfunction d2r
 
-d2f = d2r(d)/(1d0+d2r(d))
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-end function d2f
-!**************************************************************************************************************************************
-!**************************************************************************************************************************************
-function r2d(r)
+function r2dp(ratio,rstd)
 implicit none
-real(kind=8), parameter :: rsmow = 0.0020052d0
-real(kind=8) r, r2d
+real(kind=8) r2dp,ratio,rstd
+r2dp=1d3*log(ratio/rstd)
+endfunction r2dp
 
-r2d = 1d3*(r-rsmow)/rsmow
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-end function r2d
-!**************************************************************************************************************************************
-!**************************************************************************************************************************************
-function f2d(f)
+function dp2r(dp,rstd)
 implicit none
-real(kind=8), parameter :: rsmow = 0.0020052d0
-real(kind=8) f, r2d, r, f2d
+real(kind=8) dp2r,dp,rstd
+dp2r=rstd*exp(dp*1d-3)
+endfunction dp2r
 
-r = f/(1d0-f)
-f2d = r2d(r)
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-end function f2d
-!**************************************************************************************************************************************
+function dp2d(dp,rstd)
+implicit none
+real(kind=8) dp2d,dp,rstd,dp2r, r2d
+dp2d = r2d(dp2r(dp,rstd),rstd)  
+endfunction dp2d
+
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+function d2dp(d,rstd)
+implicit none
+real(kind=8) d2dp,d,rstd,d2r, r2dp
+d2dp = r2dp(d2r(d,rstd),rstd)  
+endfunction d2dp
+
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+function r2f(r1,r2)
+implicit none
+real(kind=8) r2f,r1,r2
+r2f = r1/(1d0+r1+r2)
+endfunction r2f
+
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+function f2r(f1,f2)
+implicit none
+real(kind=8) f2r,f1,f2
+f2r = f1/(1d0-f1-f2)
+endfunction f2r
+
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+function mwl_Luz(d18o,rstd)  ! returning d'17 based on d18O and meteoric water line by Luz and Barkan (2010) 
+implicit none
+real(kind=8) mwl_Luz,d18o,d2r,r2dp,rstd
+mwl_Luz = 0.528d0*r2dp(d2r(d18o,rstd),rstd) + 0.033d0
+endfunction mwl_Luz
+
+! +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

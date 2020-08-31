@@ -13,7 +13,7 @@ program HT1
 implicit none
 
 integer(kind=4),parameter :: nx = 200, ny = 320
-real(kind=8),parameter :: xmax = 300d3   !  m
+real(kind=8),parameter :: xmax = 30d3   !  m
 real(kind=8),parameter :: ymax = 12d3    !  m 
 real(kind=8),parameter :: yr2sec = 60d0*60d0*24d0*365.25d0 ! sec/yr
 real(kind=8) :: rl = 1d8 ! m ridge length
@@ -79,8 +79,8 @@ integer dumint(8)
 
 call date_and_time(dumchr(1),dumchr(2),dumchr(3),dumint)
 
-workdir = 'C:/Users/YK/Desktop/HT_res/'
-workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh300_wide_spx1_200x320_irr_v2'
+workdir = '../ht-oiso_output/'
+workdir = trim(adjustl(workdir))//'perm_expexp_-16_8-11_8_zh300_spx1_200x320_irr'
 workdir = trim(adjustl(workdir))//'-'//trim(adjustl(dumchr(1)))
 call system ('mkdir -p '//trim(adjustl(workdir)))
 workdir = trim(adjustl(workdir))//'/'
